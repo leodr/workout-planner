@@ -5,50 +5,87 @@
 //  Created by Leo Driesch on 09.05.22.
 //
 
-import SwiftUI
 import CoreData
+import SwiftUI
 
 struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
 
     @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
+        sortDescriptors: [NSSortDescriptor(keyPath: \Workout.createdAt, ascending: true)],
         animation: .default)
-    private var items: FetchedResults<Item>
+    private var workouts: FetchedResults<Workout>
+
+    @State private var showCreationSheet = false
+
+    @State private var editWorkout: Workout? = nil
+
+    @State private var newWorkoutName = ""
+
+    @State private var searchText = ""
 
     var body: some View {
         NavigationView {
             List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
+                ForEach(searchText.isEmpty ?
+                    workouts.filter { _ in true }
+                    : workouts.filter { $0.name?.localizedCaseInsensitiveContains(searchText) ?? false }
+                ) { workout in
+                    NavigationLink(workout.name ?? "Unnamed Workout") {
+                        WorkoutPage(workout: workout)
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            editWorkout = workout
+                        }) {
+                            HStack {
+                                Text("Edit")
+                                Image(systemName: "pencil")
+                            }
+                        }
+                        Divider()
+                        Button(role: .destructive, action: {
+                            withAnimation {
+                                viewContext.delete(workout)
+
+                                do {
+                                    try viewContext.save()
+                                } catch {
+                                    // Replace this implementation with code to handle the error appropriately.
+                                    // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
+                                    let nsError = error as NSError
+                                    fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+                                }
+                            }
+                        }) {
+                            HStack {
+                                Text("Delete")
+                                Image(systemName: "trash")
+                            }
+                        }
                     }
                 }
                 .onDelete(perform: deleteItems)
             }
+            .sheet(item: $editWorkout, onDismiss: save) { workout in
+                WorkoutSheet(editWorkout: workout)
+            }
+            .navigationTitle("Workouts")
             .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-#endif
                 ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
+                    Button(action: { showCreationSheet = true }) {
+                        Label("Add Item", systemImage: "plus.circle")
+                    }.sheet(isPresented: $showCreationSheet, onDismiss: save) {
+                        WorkoutSheet(editWorkout: nil)
                     }
                 }
             }
-            Text("Select an item")
+            .searchable(text: $searchText)
         }
     }
 
-    private func addItem() {
+    private func save() {
         withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
-
             do {
                 try viewContext.save()
             } catch {
@@ -62,7 +99,7 @@ struct ContentView: View {
 
     private func deleteItems(offsets: IndexSet) {
         withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
+            offsets.map { workouts[$0] }.forEach(viewContext.delete)
 
             do {
                 try viewContext.save()
